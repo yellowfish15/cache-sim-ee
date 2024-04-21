@@ -23,14 +23,18 @@ private:
     const static unsigned int lineSize = 64; // Size of each cache line in bytes
 	const static unsigned int numLines = cacheSize/lineSize;
 	
+	unsigned int indexBits; // Number of index bits for address mapping
+    unsigned int offsetBits; // Number of offset bits for address mapping
+    unsigned int tagBits; // Number of tag bits for address mapping
+	
 	// type: 0 = mem, 1 = instr
 	bool valid[2][numLines]; // valid bit for each line
 	unsigned int cache[2][numLines]; // tag value for each line
-	
-	
-    unsigned int indexBits; // Number of index bits for address mapping
-    unsigned int offsetBits; // Number of offset bits for address mapping
-    unsigned int tagBits; // Number of tag bits for address mapping
+
+	// stats
+	unsigned int hits = 0;
+	unsigned int misses = 0;
+	double energy = 0; // total energy consumed
 
     // Address mapping function to calculate index and tag
     void addressMapping(unsigned int address, unsigned int& index, unsigned int& tag) const {
@@ -39,6 +43,7 @@ private:
     }
 
 public:
+
     L1() {
         // Calculate index bits, offset bits, and tag bits based on cache size and line size
         indexBits = log2(cacheSize / lineSize);
@@ -54,26 +59,52 @@ public:
 
     // Read data from cache
 	// type: 0 = mem, 1 = instr
-    bool read(unsigned int type, unsigned int address) {
+	// return amount of time elapsed
+    double read(unsigned int type, unsigned int address, bool& hit) {
         unsigned int index, tag;
         addressMapping(address, index, tag);
 
         if (valid[type][index] && cache[type][index] == tag) { // cache hit
-            return true;
+			hits++;
+            hit = true;
         } else { // cache miss
-            return false;
+			misses++;
+            hit = false;
         }
+		return 0.5;
     }
 
     // Write data to cache
 	// assuming memory write
-    void write(unsigned int address, unsigned int data) {
+	// return amount of time elapsed
+    double write(unsigned int address, unsigned int data) {
         unsigned int index, tag;
         addressMapping(address, index, tag);
-
         cache[0][index] = tag;
 		valid[0][index] = true;
+		return 0.5;
     }
+	
+	// add energy spent idle (state = false) or active (state = true)
+	// time is in nanoseconds
+	void addEnergy(double time, bool state) {
+		if(state) // active reads/writes
+			energy += time;
+		else
+			energy += time*0.5;
+	}
+	
+	int getHits() {
+		return hits;
+	}
+	
+	int getMisses() {
+		return misses;
+	}
+	
+	double getEnergy() {
+		return energy;
+	}
 };
 
 class System {
@@ -92,21 +123,36 @@ public:
 
         int OP;
         string address, value;
+		double elapsed = 0; // time elapsed in nanoseconds
         while (inputFile >> OP >> address >> value) {
             unsigned int addr = hexStringToUInt(address);
             unsigned int val = hexStringToUInt(value);
 			// cout << "OP: " << OP << ", Address: " << address << " -> " << addr << ", Value: " << value << " -> " << val << endl;
             switch (OP) { // trace operations
-                case 0: // memory read
-                    l1.read(0, addr);
+                case 0: { // memory read
+					bool hit = false;
+					double time = l1.read(0, addr, hit);
+					elapsed += time;
+					l1.addEnergy(time, true);
+					if(!hit) { // missed, check L2
+						
+					}
                     break;
-                case 1: // memory write
-                    l1.write(addr, val);
+                } case 1: { // memory write
+                    double time = l1.write(addr, val);
+					elapsed += time;
+					l1.addEnergy(time, true);
                     break;
-                case 2: // instruction fetch
-					l1.read(1, addr);
+                } case 2: { // instruction fetch
+					bool hit = false;
+					double time = l1.read(1, addr, hit);
+					elapsed += time;
+					l1.addEnergy(time, true);
+					if(!hit) { // missed, check L2
+						
+					}
                     break;
-                case 3: // ignore
+                } case 3: // ignore
                     break;
                 case 4: // flush cache
                     // Not implemented yet
@@ -117,6 +163,12 @@ public:
         }
 
         inputFile.close();
+		
+		// print out statistics
+		cout << "Test: " << fname << '\n';
+		cout << "L1 Cache Hits: " << l1.getHits() << '\n';
+		cout << "L1 Cache Misses: " << l1.getMisses() << '\n';
+		cout << "L1 Energy (nJ): " << l1.getEnergy() << '\n';
     }
 };
 

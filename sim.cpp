@@ -361,16 +361,23 @@ public:
 		cout << "L1 Cache Hits: " << l1.getHits() << '\n';
 		cout << "L1 Cache Misses: " << l1.getMisses() << '\n';
 		cout << "L1 Energy (nJ): " << l1.getEnergy() << '\n';
+		cout << '\n';
+		
 		cout << "L2 Cache Hits: " << l2.getHits() << '\n';
 		cout << "L2 Cache Misses: " << l2.getMisses() << '\n';
 		cout << "L2 Energy (nJ): " << l2.getEnergy() << '\n';
+		cout << '\n';
+		
 		cout << "DRAM Energy(nJ): " << dram.getEnergy() << '\n';
-		cout << "Misaligned: " << dram.getMisaligned() << '\n';
+		cout << "Misaligned Accesses: " << dram.getMisaligned() << '\n';
+		cout << '\n';
+		
+		cout << "Total Time Elapsed (mS): " << elapsed/1000000 << '\n';
     }
 };
 
 int main() {
 	System sys(4);
-    sys.run("023.eqntott.din");
+    sys.run("./Spec_Benchmark/Spec_Benchmark/047.tomcatv.din");
 	return 0;
 }

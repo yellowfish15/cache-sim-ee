@@ -398,9 +398,10 @@ public:
 
 		// statistics
 		double elapsed = 0; // time elapsed in nanoseconds
-
+		
         int OP;
         string address, value;
+		int access = 0;
         while (inputFile >> OP >> address >> value) {
             unsigned int addr = hexStringToUInt(address);
             unsigned int val = hexStringToUInt(value);
@@ -443,7 +444,6 @@ public:
                 } case 3: // ignore
                     break;
                 case 4: // flush cache
-                    // Not implemented yet
                     break;
                 default:
                     exit(-1); // error unknown operation
@@ -477,7 +477,7 @@ public:
 		
 		cout << "Total Time Elapsed (mS): " << elapsed/1000000 << '\n';
     }
-}
+};
 
 int main() {
 	System sys(2);

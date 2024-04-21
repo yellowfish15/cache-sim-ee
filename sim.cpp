@@ -32,6 +32,8 @@ private:
 	unsigned int cache[2][numLines]; // tag value for each line
 
 	// stats
+	unsigned int reads = 0; // number of L1 reads
+	unsigned int writes = 0; // number of L1 writes
 	unsigned int hits = 0;
 	unsigned int misses = 0;
 	double energy = 0; // total energy consumed
@@ -71,6 +73,7 @@ public:
 			misses++;
             hit = false;
         }
+		reads++;
 		return 0.5;
     }
 
@@ -78,11 +81,19 @@ public:
 	// assuming memory write
 	// type: 0 = mem, 1 = instr
 	// return amount of time elapsed
-    double write(unsigned int type, unsigned int address) {
+    double write(unsigned int type, unsigned int address, bool& hit) {
         unsigned int index, tag;
         addressMapping(address, index, tag);
+		if (!valid[type][index] || cache[type][index] != tag) {
+			hit = false;
+			misses++;
+		} else {
+			hit = true;
+			hits++;
+		}
         cache[type][index] = tag;
 		valid[type][index] = true;
+		writes++;
 		return 0.5;
     }
 	
@@ -93,6 +104,14 @@ public:
 			energy += time;
 		else // idle
 			energy += time*0.5;
+	}
+	
+	unsigned int getReads() {
+		return reads;
+	}
+	
+	unsigned int getWrites() {
+		return writes;
 	}
 	
 	unsigned int getHits() {
@@ -117,13 +136,15 @@ private:
     const unsigned int associativity;
     const unsigned int numSets;
 
-    // Address mapping function to calculate index and tag
+    // address mapping function to calculate index and tag
     void addressMapping(unsigned int address, unsigned int& index, unsigned int& tag) const {
-        index = (address / lineSize) % numSets;
+        index = (address / lineSize) % numSets; // set number
         tag = address / (lineSize * numSets);
     }
 	
 	// stats
+	unsigned int reads = 0; // number of L2 reads
+	unsigned int writes = 0; // number of L2 writes
 	unsigned int hits = 0;
 	unsigned int misses = 0;
 	double energy = 0; // total energy consumed
@@ -138,6 +159,7 @@ public:
 
     // Read data from cache
     double read(unsigned int address, bool& hit) {
+		reads++;
 		energy += 0.005; // add 5 picojoules for L2 access
         unsigned int index, tag;
         addressMapping(address, index, tag);
@@ -157,15 +179,40 @@ public:
     }
 
     // Write data to cache
-    double write(unsigned int address) {
+    double write(unsigned int address, bool& hit) {
+		writes++;
 		energy += 0.005; // add 5 picojoules for L2 access
         unsigned int index, tag;
         addressMapping(address, index, tag);
 
         // Update cache
-        pair<bool, unsigned int>& line = sets[index][rand() % associativity];
-        line.first = true;
-        line.second = tag;
+		// Check each line in the set for a match
+		hit = false;
+        for (const auto& p : sets[index]) {
+            if (p.first && p.second == tag) {
+				// update this line
+				hit = true;
+				hits++;
+				break;
+            }
+        }
+        if(!hit) { // tag not in cache
+			misses++;
+			bool found = false;
+			for (auto& p : sets[index]) {
+				if (!p.first) { // replace an empty slot
+					// update this line
+					p.first = true;
+					p.second = tag;
+					found = true;
+				}
+			}
+			if(!found) { // random eviction
+				pair<bool, unsigned int>& line = sets[index][rand() % associativity];
+				line.first = true;
+				line.second = tag;
+			}
+		}
 		return 5;
     }
 	
@@ -176,6 +223,14 @@ public:
 			energy += time*2;
 		else // idle
 			energy += time*0.8;
+	}
+	
+	unsigned int getReads() {
+		return reads;
+	}
+	
+	unsigned int getWrites() {
+		return writes;
 	}
 	
 	unsigned int getHits() {
@@ -195,12 +250,15 @@ class DRAM {
 private:
 	// stats
 	unsigned int misaligned = 0; // number of misaligned memory accesses
+	unsigned int reads = 0; // number of DRAM reads
+	unsigned int writes = 0; // number of DRAM writes
 	double energy = 0; // total energy consumed
 public:
     // read data from DRAM
     double read(unsigned int address) {
 		if(address%64 != 0)
 			misaligned++;
+		reads++;
 		energy += 0.64; // add 640 picojoules for DRAM access
         return 50; // 50 nsec
     }
@@ -209,6 +267,7 @@ public:
     double write(unsigned int address) {
 		if(address%64 != 0)
 			misaligned++;
+		writes++;
 		energy += 0.64; // add 640 picojoules for DRAM access
 		return 50; // 50 nsec
     }
@@ -226,6 +285,14 @@ public:
 		return misaligned;
 	}
 	
+	unsigned int getReads() {
+		return reads;
+	}
+	
+	unsigned int getWrites() {
+		return writes;
+	}
+	
 	double getEnergy() {
 		return energy;
 	}
@@ -241,31 +308,83 @@ public:
 	System(int associativity) : l2(associativity) {}
 
 	// type: 0 = mem, 1 = instr
+	// level = 1: read from L1
+	// level = 2: read from L2
+	// level = 3: read from DRAM
+	double read(int level, int type, int addr, bool& hit) {
+		double elapsed = 0;
+		if(level == 1) { // read from L2
+			elapsed = l1.read(type, addr, hit);
+			l1.addEnergy(elapsed, true);
+			l2.addEnergy(elapsed, false);
+			dram.addEnergy(elapsed, false);
+		} else if (level == 2) { // read from L2
+			elapsed = l2.read(addr, hit);
+			l1.addEnergy(elapsed, false);
+			l2.addEnergy(elapsed, true);
+			dram.addEnergy(elapsed, false);
+		} else if(level == 3) { // read from DRAM
+			hit = true;
+			elapsed = dram.read(addr);
+			l1.addEnergy(elapsed, false);
+			l2.addEnergy(elapsed, false);
+			dram.addEnergy(elapsed, true);
+		} 
+		return elapsed;
+	}
+
+	// type: 0 = mem, 1 = instr
 	// level = 1: write to L1 only
 	// level = 2: write to L2 and L1 only
 	// level = 3: write to DRAM, L2, and L1
 	double write(int level, int type, int addr) {
 		double elapsed = 0;
-		if(level > 0) { // write to L1
-			double time = l1.write(type, addr);
-			elapsed += time;
-			l1.addEnergy(time, true);
-			l2.addEnergy(time, false);
-			dram.addEnergy(time, false);
-		}
-		if(level > 1) { // write to L2
-			double time = l2.write(addr);
-			elapsed += time;
-			l1.addEnergy(time, false);
-			l2.addEnergy(time, true);
-			dram.addEnergy(time, false);
-		}
 		if(level > 2) { // write to DRAM
 			double time = dram.write(addr);
 			elapsed += time;
 			l1.addEnergy(time, false);
 			l2.addEnergy(time, false);
 			dram.addEnergy(time, true);
+		}
+		if(level > 1) { // write to L2
+			bool hit = false;
+			double time = l2.write(addr, hit);
+			elapsed += time;
+			l1.addEnergy(time, false);
+			l2.addEnergy(time, true);
+			dram.addEnergy(time, false);
+			if(!hit) { // L2 write miss
+				elapsed += read(3, type, addr, hit); // read from dram
+				time = l2.write(addr, hit); // write to L2
+				elapsed += time;
+				l1.addEnergy(time, false);
+				l2.addEnergy(time, true);
+				dram.addEnergy(time, false);
+			}
+		}
+		if(level > 0) { // write to L1
+			bool hit = false;
+			double time = l1.write(type, addr, hit);
+			elapsed += time;
+			l1.addEnergy(time, true);
+			l2.addEnergy(time, false);
+			dram.addEnergy(time, false);
+			if(!hit) { // L1 write miss 
+				elapsed += read(3, type, addr, hit); // read from L2
+				if(!hit) { // not in L2
+					elapsed += read(3, type, addr, hit); // read from dram
+					time = l2.write(addr, hit); // write to L2
+					elapsed += time;
+					l1.addEnergy(time, false);
+					l2.addEnergy(time, true);
+					dram.addEnergy(time, false);
+				}
+				time = l1.write(type, addr, hit); // write to L1
+				elapsed += time;
+				l1.addEnergy(time, true);
+				l2.addEnergy(time, false);
+				dram.addEnergy(time, false);
+			}
 		}
 		return elapsed;
 	}
@@ -290,23 +409,11 @@ public:
             switch (OP) { // trace operations
                 case 0: { // memory read
 					bool hit = false;
-					double time = l1.read(0, addr, hit);
-					elapsed += time;
-					l1.addEnergy(time, true);
-					l2.addEnergy(time, false);
-					dram.addEnergy(time, false);
+					elapsed += read(1, 0, addr, hit);
 					if(!hit) { // missed, check L2
-						time = l2.read(addr, hit);
-						elapsed += time;
-						l1.addEnergy(time, false);
-						l2.addEnergy(time, true);
-						dram.addEnergy(time, false);
+						elapsed += read(2, 0, addr, hit);
 						if(!hit) { // miss, check DRAM
-							time = dram.read(addr);
-							elapsed += time;
-							l1.addEnergy(time, false);
-							l2.addEnergy(time, false);
-							dram.addEnergy(time, true);
+							elapsed += read(3, 0, addr, hit);
 							
 							// update L1 and L2 cache
 							elapsed += write(2, 0, addr);
@@ -320,22 +427,11 @@ public:
                     break;
                 } case 2: { // instruction fetch
 					bool hit = false;
-					double time = l1.read(1, addr, hit);
-					elapsed += time;
-					l1.addEnergy(time, true);
-					l2.addEnergy(time, false);
+					elapsed += read(1, 1, addr, hit);
 					if(!hit) { // missed, check L2
-						time = l2.read(addr, hit);
-						elapsed += time;
-						l1.addEnergy(time, false);
-						l2.addEnergy(time, true);
-						dram.addEnergy(time, false);
+						elapsed += read(2, 1, addr, hit);
 						if(!hit) { // miss, check DRAM
-							time = dram.read(addr);
-							elapsed += time;
-							l1.addEnergy(time, false);
-							l2.addEnergy(time, false);
-							dram.addEnergy(time, true);
+							elapsed += read(3, 1, addr, hit);
 							
 							// update L1 and L2 cache
 							elapsed += write(2, 1, addr);
@@ -357,27 +453,34 @@ public:
         inputFile.close();
 		
 		// print out statistics
+		cout << "--------\n";
 		cout << "Test: " << fname << '\n';
+		cout << "L1 Reads: " << l1.getReads() << '\n'; 
+		cout << "L1 Writes: " << l1.getWrites() << '\n'; 
 		cout << "L1 Cache Hits: " << l1.getHits() << '\n';
 		cout << "L1 Cache Misses: " << l1.getMisses() << '\n';
-		cout << "L1 Energy (nJ): " << l1.getEnergy() << '\n';
+		cout << "L1 Energy (mJ): " << l1.getEnergy()/1000000 << '\n';
 		cout << '\n';
 		
+		cout << "L2 Reads: " << l2.getReads() << '\n'; 
+		cout << "L2 Writes: " << l2.getWrites() << '\n'; 
 		cout << "L2 Cache Hits: " << l2.getHits() << '\n';
 		cout << "L2 Cache Misses: " << l2.getMisses() << '\n';
-		cout << "L2 Energy (nJ): " << l2.getEnergy() << '\n';
+		cout << "L2 Energy (mJ): " << l2.getEnergy()/1000000 << '\n';
 		cout << '\n';
 		
-		cout << "DRAM Energy(nJ): " << dram.getEnergy() << '\n';
-		cout << "Misaligned Accesses: " << dram.getMisaligned() << '\n';
+		cout << "DRAM Reads: " << dram.getReads() << '\n'; 
+		cout << "DRAM Writes: " << dram.getWrites() << '\n'; 
+		cout << "DRAM Energy (mJ): " << dram.getEnergy()/1000000 << '\n';
+		// cout << "Misaligned Accesses: " << dram.getMisaligned() << '\n';
 		cout << '\n';
 		
 		cout << "Total Time Elapsed (mS): " << elapsed/1000000 << '\n';
     }
-};
+}
 
 int main() {
-	System sys(4);
+	System sys(2);
     sys.run("./Spec_Benchmark/Spec_Benchmark/047.tomcatv.din");
 	return 0;
 }

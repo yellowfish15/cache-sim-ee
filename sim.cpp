@@ -49,6 +49,18 @@ public:
 		reads++;
     }
 
+	// write data to DRAM
+    void write(unsigned int address) {
+		if(address%64 != 0)
+			misaligned++;
+
+		sync(); 
+		clock += 50;
+		sysclock = clock;
+		energy += 50*4; // active energy
+		writes++;
+    }
+
 	unsigned int getMisaligned() {
 		return misaligned;
 	}
@@ -146,12 +158,14 @@ public:
 				pair<bool, unsigned int>& line = sets[index][rand() % associativity];
 				line.first = true;
 				line.second = tag;
+				// we need to evict this cache line to DRAM
+				dram.write(address);
 			}
 		}
     }
 
     // Write data to cache
-    void write(unsigned int address) {
+    void write(unsigned int address, DRAM& dram) {
 		writes++;
         unsigned int index, tag;
         addressMapping(address, index, tag);
@@ -187,6 +201,9 @@ public:
 				pair<bool, unsigned int>& line = sets[index][rand() % associativity];
 				line.first = true;
 				line.second = tag;
+
+				// we need to evict this cache line to DRAM
+				dram.write(address);
 			}
 		}
     }
@@ -369,7 +386,7 @@ public:
                     break;
                 } case 1: { // memory write
 					l1.write(0, addr);
-					l2.write(addr);
+					l2.write(addr, dram);
                     break;
                 } case 2: { // instruction fetch
 					l1.read(1, addr, l2, dram);

@@ -406,7 +406,6 @@ void run(string fname, int associativity) {
 	inputFile.close();
 	
 	// print out statistics
-	cout << "--------\n";
 	cout << "Test: " << fname << '\n';
 	cout << "L1 Reads: " << l1.getReads() << '\n'; 
 	cout << "L1 Writes: " << l1.getWrites() << '\n'; 

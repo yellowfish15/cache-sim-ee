@@ -135,6 +135,7 @@ public:
 
 			// update L2
 			bool found = false;
+	/*
 			for (auto& p : sets[index]) {
 				if (!p.first) { // replace an empty slot
 					// update this line
@@ -143,6 +144,7 @@ public:
 					found = true;
 				}
 			}
+	*/
 			if(!found) { // random eviction
 				pair<bool, unsigned int>& line = sets[index][rand() % associativity];
 				line.first = true;
@@ -178,6 +180,7 @@ public:
         if(!hit) { // tag not in cache
 			misses++;
 			bool found = false;
+	/*
 			for (auto& p : sets[index]) {
 				if (!p.first) { // replace an empty slot
 					// update this line
@@ -186,6 +189,7 @@ public:
 					found = true;
 				}
 			}
+	*/
 			if(!found) { // random eviction
 				pair<bool, unsigned int>& line = sets[index][rand() % associativity];
 				line.first = true;
@@ -356,15 +360,31 @@ struct Result {
 	unsigned int l1_hits = 0;
 	unsigned int l1_miss = 0;
 	double l1_hit_rate = 0;
-	double l1_energy = 0; // energy consumption in nJ
+	double l1_energy = 0; // energy consumption in mJ
 
 	unsigned int l2_hits = 0;
 	unsigned int l2_miss = 0;
 	double l2_hit_rate = 0;
-	double l2_energy = 0; // energy consumption in nJ
+	double l2_energy = 0; // energy consumption in mJ
 
-	double dram_energy = 0; // energy consumption in nJ
-	double time_elapsed = 0; // time elapsed in nS 
+	double dram_energy = 0; // energy consumption in mJ
+	double time_elapsed = 0; // time elapsed in mS 
+};
+
+// contains all the data across all runs
+struct Stats {
+	double l1_hits = 0;
+	double l1_miss = 0;
+	double l1_hit_rate = 0;
+	double l1_energy = 0; // energy consumption in mJ
+
+	double l2_hits = 0;
+	double l2_miss = 0;
+	double l2_hit_rate = 0;
+	double l2_energy = 0; // energy consumption in mJ
+
+	double dram_energy = 0; // energy consumption in mJ
+	double time_elapsed = 0; // time elapsed in mS 
 };
 
 void run(string fname, int associativity, struct Result& results) {
@@ -414,13 +434,13 @@ void run(string fname, int associativity, struct Result& results) {
 	results.l1_hits = l1.getHits();
 	results.l1_miss = l1.getMisses();
 	results.l1_hit_rate = l1.getHitRate();
-	results.l1_energy = l1.getEnergy();
+	results.l1_energy = l1.getEnergy()/1000000; // convert from nJ to mJ
 	results.l2_hits = l2.getHits();
 	results.l2_miss = l2.getMisses();
 	results.l2_hit_rate = l2.getHitRate();
-	results.l2_energy = l2.getEnergy();
-	results.dram_energy = dram.getEnergy();
-	results.time_elapsed = sysclock;
+	results.l2_energy = l2.getEnergy()/1000000; // convert from nJ to mJ
+	results.dram_energy = dram.getEnergy()/1000000; // convert from nJ to mJ
+	results.time_elapsed = sysclock/1000000; // convert from nS to mS
 }
 
 int main(int argc, char* argv[]) {
@@ -447,7 +467,7 @@ int main(int argc, char* argv[]) {
 	}
 
 	if(trials > 1) { // calculate distribution statistics
-		Result mean; // Calculate mean
+		Stats mean; // Calculate mean
 		for (const auto& result : results) {
 			mean.l1_hits += result.l1_hits;
 			mean.l1_miss += result.l1_miss;
@@ -472,7 +492,7 @@ int main(int argc, char* argv[]) {
 		mean.time_elapsed /= trials;
 
 		// Calculate standard deviation
-		Result stddev;
+		Stats stddev;
 		for (const auto& result : results) {
 			stddev.l1_hits += pow(result.l1_hits - mean.l1_hits, 2);
 			stddev.l1_miss += pow(result.l1_miss - mean.l1_miss, 2);
@@ -497,46 +517,60 @@ int main(int argc, char* argv[]) {
 		stddev.time_elapsed = sqrt(stddev.time_elapsed / trials);
 
 		// print out statistics
-		cout << "Test Results (" << trials << " trials): " << fname << '\n';
-		cout << "Set Associativity Level: " << associativity << '\n';
-		cout << "Average L1 Cache Hits: " << mean.l1_hits << '\n';
-		cout << "Average L1 Cache Misses: " << mean.l1_miss << '\n';
-		cout << "Average L1 Hit Rate: " << mean.l1_hit_rate << '\n';
-		cout << "Average L1 Energy (mJ): " << mean.l1_energy/1000000 << '\n';
+		cout << "Test Results (" << trials << " trials): " << '\n';
+		cout << "L2 Associativity Level: " << associativity << '\n';
 		cout << '\n';
-		
-		cout << "Average L2 Cache Hits: " << mean.l2_hits << '\n';
-		cout << "Average L2 Cache Misses: " << mean.l2_miss << '\n';
-		cout << "Average L2 Hit Rate: " << mean.l2_hit_rate << '\n';
-		cout << "Average L2 Energy (mJ): " << mean.l2_energy/1000000 << '\n';
+
+		const int w1 = 18; // width of fields
+		const int w2 = 12; // width of mean
+		const int w3 = 12; // width of standard deviation
+		const int prec = 4;
+
+		cout << setw(w1) << "Metric:" << setw(w2) << "Mean:" << setw(w3) << "StdDev:" << '\n';
+		// Print statistics
+		cout << setw(w1) << "L1 Cache Hits:" << setw(w2) << mean.l1_hits << setw(w3) << setprecision(prec) << stddev.l1_hits << '\n';
+		cout << setw(w1) << "L1 Cache Misses:" << setw(w2) << mean.l1_miss << setw(w3) << setprecision(prec) << stddev.l1_miss << '\n';
+		cout << setw(w1) << "L1 Hit Rate:" << setw(w2) << mean.l1_hit_rate << setw(w3) << setprecision(prec) << stddev.l1_hit_rate << '\n';
+		cout << setw(w1) << "L1 Energy (mJ):" << setw(w2) << mean.l1_energy << setw(w3) << setprecision(prec) << stddev.l1_energy << '\n';
 		cout << '\n';
-		
-		cout << "Average DRAM Energy (mJ): " << mean.dram_energy/1000000 << '\n';
+
+		cout << setw(w1) << "L2 Cache Hits:" << setw(w2) << mean.l2_hits << setw(w3) << setprecision(prec) << stddev.l2_hits << '\n';
+		cout << setw(w1) << "L2 Cache Misses:" << setw(w2) << mean.l2_miss << setw(w3) << setprecision(prec) << stddev.l2_miss << '\n';
+		cout << setw(w1) << "L2 Hit Rate:" << setw(w2) << mean.l2_hit_rate << setw(w3) << setprecision(prec) << stddev.l2_hit_rate << '\n';
+		cout << setw(w1) << "L2 Energy (mJ):" << setw(w2) << mean.l2_energy << setw(w3) << setprecision(prec) << stddev.l2_energy << '\n';
 		cout << '\n';
-		
-		cout << "Average Total Energy Consumption (mJ): " << (mean.l1_energy+mean.l2_energy+mean.dram_energy)/1000000 << '\n';
-		cout << "Average Total Time Elapsed (mS): " << mean.time_elapsed/1000000 << '\n';
+
+		cout << setw(w1) << "DRAM Energy (mJ):" << setw(w2) << mean.dram_energy << setw(w3) << setprecision(prec) << stddev.dram_energy << '\n';
+		cout << '\n';
+
+		cout << "Mean Total Energy Consumption (mJ): " << (mean.l1_energy+mean.l2_energy+mean.dram_energy) << '\n';
+		cout << "Total Time Elapsed (mS): " << mean.time_elapsed << '\n';
 	} else if (trials == 1) {
+		const int w1 = 20; // width of fields
+		const int w2 = 8; // width of value
+
 		// print out statistics
 		cout << "Test Results (" << trials << " trial): " << fname << '\n';
-		cout << "Set Associativity Level: " << associativity << '\n';
-		cout << "L1 Cache Hits: " << results[0].l1_hits << '\n';
-		cout << "L1 Cache Misses: " << results[0].l1_miss << '\n';
-		cout << "L1 Hit Rate: " << results[0].l1_hit_rate << '\n';
-		cout << "L1 Energy (mJ): " << results[0].l1_energy/1000000 << '\n';
+		cout << "L2 Associativity Level: " << associativity << '\n';
+		cout << '\n';
+
+		cout << setw(w1) << "L1 Cache Hits: " << setw(w2) << results[0].l1_hits << '\n';
+		cout << setw(w1) << "L1 Cache Misses: " << setw(w2) << results[0].l1_miss << '\n';
+		cout << setw(w1) << "L1 Hit Rate: " << setw(w2) << results[0].l1_hit_rate << '\n';
+		cout << setw(w1) << "L1 Energy (mJ): " << setw(w2) << results[0].l1_energy << '\n';
 		cout << '\n';
 		
-		cout << "L2 Cache Hits: " << results[0].l2_hits << '\n';
-		cout << "L2 Cache Misses: " << results[0].l2_miss << '\n';
-		cout << "L2 Hit Rate: " << results[0].l2_hit_rate << '\n';
-		cout << "L2 Energy (mJ): " << results[0].l2_energy/1000000 << '\n';
+		cout << setw(w1) << "L2 Cache Hits: " << setw(w2) << results[0].l2_hits << '\n';
+		cout << setw(w1) << "L2 Cache Misses: " << setw(w2) << results[0].l2_miss << '\n';
+		cout << setw(w1) << "L2 Hit Rate: " << setw(w2) << results[0].l2_hit_rate << '\n';
+		cout << setw(w1) << "L2 Energy (mJ): " << setw(w2) << results[0].l2_energy << '\n';
 		cout << '\n';
 		
-		cout << "DRAM Energy (mJ): " << results[0].dram_energy/1000000 << '\n';
+		cout << setw(w1) << "DRAM Energy (mJ): " << setw(w2) << results[0].dram_energy << '\n';
 		cout << '\n';
 		
-		cout << "Total Energy Consumption (mJ): " << (results[0].l1_energy+results[0].l2_energy+results[0].dram_energy)/1000000 << '\n';
-		cout << "Total Time Elapsed (mS): " << sysclock/1000000 << '\n';
+		cout << setw(w1) << "Total Energy Consumption (mJ): " << (results[0].l1_energy+results[0].l2_energy+results[0].dram_energy) << '\n';
+		cout << setw(w1) << "Total Time Elapsed (mS): " << results[0].time_elapsed << '\n';
 	}
     return 0;
 }

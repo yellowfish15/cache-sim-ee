@@ -1,5 +1,10 @@
 #!/bin/bash
 
+if (( $# != 2 )); then
+    echo "Need exactly two arguments: <set associativity> <# of trials to run>"
+    exit 1
+fi
+
 # path to the Spec_Benchmark folder
 SPEC_BENCHMARK_DIR="./Spec_Benchmark/Spec_Benchmark/"
 
@@ -22,3 +27,4 @@ do
         "./$EXECUTABLE" "$file" $1$ $2$
     fi
 done
+echo "~===================================~"

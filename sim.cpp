@@ -354,83 +354,77 @@ public:
 	}
 };
 
-class System {
-private:
-    L1 l1;
-	L2 l2;
+void run(string fname, int associativity) {
+	// configure system
+	L1 l1;
+	L2 l2(associativity);
 	DRAM dram;
+	sysclock = 0; // reset the system clock
 
-public:
-	System(int associativity) : l2(associativity) {}
+	ifstream inputFile(fname); // input file
+	if (!inputFile) { // file doesn't exist
+		cerr << "Failed to open input file!" << endl;
+		exit(-1); // error
+	}
+	
+	int OP;
+	string address, value;
+	int access = 0;
+	while (inputFile >> OP >> address >> value) {
+		unsigned int addr = hexStringToUInt(address);
+		unsigned int val = hexStringToUInt(value);
+		
+		// cout << "OP: " << OP << ", Address: " << address << " -> " << addr << ", Value: " << value << " -> " << val << endl;
+		switch (OP) { // trace operations
+			case 0: { // memory read
+				l1.read(0, addr, l2, dram);
+				break;
+			} case 1: { // memory write
+				l1.write(0, addr);
+				l2.write(addr, dram);
+				break;
+			} case 2: { // instruction fetch
+				l1.read(1, addr, l2, dram);
+				break;
+			} case 3: // ignore
+				break;
+			case 4: // flush cache
+				break;
+			default:
+				exit(-1); // error unknown operation
+		}
+	}
 
-    void run(string fname) {
-		sysclock = 0; // reset the system clock
+	inputFile.close();
+	
+	// print out statistics
+	cout << "--------\n";
+	cout << "Test: " << fname << '\n';
+	cout << "L1 Reads: " << l1.getReads() << '\n'; 
+	cout << "L1 Writes: " << l1.getWrites() << '\n'; 
+	cout << "L1 Cache Hits: " << l1.getHits() << '\n';
+	cout << "L1 Cache Misses: " << l1.getMisses() << '\n';
+	cout << "L1 Energy (mJ): " << l1.getEnergy()/1000000 << '\n';
+	cout << '\n';
+	
+	cout << "L2 Reads: " << l2.getReads() << '\n'; 
+	cout << "L2 Writes: " << l2.getWrites() << '\n'; 
+	cout << "L2 Cache Hits: " << l2.getHits() << '\n';
+	cout << "L2 Cache Misses: " << l2.getMisses() << '\n';
+	cout << "L2 Energy (mJ): " << l2.getEnergy()/1000000 << '\n';
+	cout << '\n';
+	
+	cout << "DRAM Reads: " << dram.getReads() << '\n'; 
+	cout << "DRAM Writes: " << dram.getWrites() << '\n'; 
+	cout << "DRAM Energy (mJ): " << dram.getEnergy()/1000000 << '\n';
+	cout << "Misaligned Accesses: " << dram.getMisaligned() << '\n';
+	cout << '\n';
+	
+	cout << "Total Time Elapsed (mS): " << sysclock/1000000 << '\n';
+}
 
-        ifstream inputFile(fname); // input file
-        if (!inputFile) { // file doesn't exist
-            cerr << "Failed to open input file!" << endl;
-            exit(-1); // error
-        }
-		
-        int OP;
-        string address, value;
-		int access = 0;
-        while (inputFile >> OP >> address >> value) {
-            unsigned int addr = hexStringToUInt(address);
-            unsigned int val = hexStringToUInt(value);
-			
-			// cout << "OP: " << OP << ", Address: " << address << " -> " << addr << ", Value: " << value << " -> " << val << endl;
-            switch (OP) { // trace operations
-                case 0: { // memory read
-					l1.read(0, addr, l2, dram);
-                    break;
-                } case 1: { // memory write
-					l1.write(0, addr);
-					l2.write(addr, dram);
-                    break;
-                } case 2: { // instruction fetch
-					l1.read(1, addr, l2, dram);
-                    break;
-                } case 3: // ignore
-                    break;
-                case 4: // flush cache
-                    break;
-                default:
-                    exit(-1); // error unknown operation
-            }
-        }
-
-        inputFile.close();
-		
-		// print out statistics
-		cout << "--------\n";
-		cout << "Test: " << fname << '\n';
-		cout << "L1 Reads: " << l1.getReads() << '\n'; 
-		cout << "L1 Writes: " << l1.getWrites() << '\n'; 
-		cout << "L1 Cache Hits: " << l1.getHits() << '\n';
-		cout << "L1 Cache Misses: " << l1.getMisses() << '\n';
-		cout << "L1 Energy (mJ): " << l1.getEnergy()/1000000 << '\n';
-		cout << '\n';
-		
-		cout << "L2 Reads: " << l2.getReads() << '\n'; 
-		cout << "L2 Writes: " << l2.getWrites() << '\n'; 
-		cout << "L2 Cache Hits: " << l2.getHits() << '\n';
-		cout << "L2 Cache Misses: " << l2.getMisses() << '\n';
-		cout << "L2 Energy (mJ): " << l2.getEnergy()/1000000 << '\n';
-		cout << '\n';
-		
-		cout << "DRAM Reads: " << dram.getReads() << '\n'; 
-		cout << "DRAM Writes: " << dram.getWrites() << '\n'; 
-		cout << "DRAM Energy (mJ): " << dram.getEnergy()/1000000 << '\n';
-		// cout << "Misaligned Accesses: " << dram.getMisaligned() << '\n';
-		cout << '\n';
-		
-		cout << "Total Time Elapsed (mS): " << sysclock/1000000 << '\n';
-    }
-};
 
 int main() {
-	System sys(2);
-    sys.run("./Spec_Benchmark/Spec_Benchmark/047.tomcatv.din");
+    run("./Spec_Benchmark/Spec_Benchmark/047.tomcatv.din", 2);
 	return 0;
 }

@@ -24,7 +24,6 @@ private:
 	double clock = 0; // internal clock
 
 	// stats
-	unsigned int misaligned = 0; // number of misaligned memory accesses
 	unsigned int reads = 0; // number of DRAM reads
 	unsigned int writes = 0; // number of DRAM writes
 	double energy = 0; // total energy consumed
@@ -39,9 +38,6 @@ public:
 
     // read data from DRAM
     void read(unsigned int address) {
-		if(address%64 != 0)
-			misaligned++;
-
 		sync(); 
 		clock += 50;
 		sysclock = clock;
@@ -51,19 +47,12 @@ public:
 
 	// write data to DRAM
     void write(unsigned int address) {
-		if(address%64 != 0)
-			misaligned++;
-
 		sync(); 
 		clock += 50;
 		sysclock = clock;
 		energy += 50*4; // active energy
 		writes++;
     }
-
-	unsigned int getMisaligned() {
-		return misaligned;
-	}
 	
 	unsigned int getReads() {
 		return reads;
@@ -362,7 +351,22 @@ public:
 	}
 };
 
-void run(string fname, int associativity) {
+// contains all the data across all runs
+struct Result {
+	unsigned int l1_hits = 0;
+	unsigned int l1_miss = 0;
+	double l1_hit_rate = 0;
+	double l1_energy = 0; // energy consumption in nJ
+
+	unsigned int l2_hits = 0;
+	unsigned int l2_miss = 0;
+	double l2_hit_rate = 0;
+	double l2_energy = 0; // energy consumption in nJ
+
+	double dram_energy; // energy consumption in nJ
+};
+
+void run(string fname, int associativity, struct Result& results) {
 	// configure system
 	L1 l1;
 	L2 l2(associativity);
@@ -382,7 +386,7 @@ void run(string fname, int associativity) {
 		unsigned int addr = hexStringToUInt(address);
 		unsigned int val = hexStringToUInt(value);
 		
-		// cout << "OP: " << OP << ", Address: " << address << " -> " << addr << ", Value: " << value << " -> " << val << endl;
+		// cout << "OP: " << OP << ", Address: " << address << " -> " << addr << ", Value: " << value << " -> " << val << '\n';
 		switch (OP) { // trace operations
 			case 0: { // memory read
 				l1.read(0, addr, l2, dram);
@@ -405,43 +409,102 @@ void run(string fname, int associativity) {
 
 	inputFile.close();
 	
-	// print out statistics
-	cout << "Test: " << fname << '\n';
-	cout << "L1 Reads: " << l1.getReads() << '\n'; 
-	cout << "L1 Writes: " << l1.getWrites() << '\n'; 
-	cout << "L1 Cache Hits: " << l1.getHits() << '\n';
-	cout << "L1 Cache Misses: " << l1.getMisses() << '\n';
-	cout << "L1 Hit Rate: " << l1.getHitRate() << '\n';
-	cout << "L1 Energy (mJ): " << l1.getEnergy()/1000000 << '\n';
-	cout << '\n';
-	
-	cout << "L2 Reads: " << l2.getReads() << '\n'; 
-	cout << "L2 Writes: " << l2.getWrites() << '\n'; 
-	cout << "L2 Cache Hits: " << l2.getHits() << '\n';
-	cout << "L2 Cache Misses: " << l2.getMisses() << '\n';
-	cout << "L2 Hit Rate: " << l2.getHitRate() << '\n';
-	cout << "L2 Energy (mJ): " << l2.getEnergy()/1000000 << '\n';
-	cout << '\n';
-	
-	cout << "DRAM Reads: " << dram.getReads() << '\n'; 
-	cout << "DRAM Writes: " << dram.getWrites() << '\n'; 
-	cout << "DRAM Energy (mJ): " << dram.getEnergy()/1000000 << '\n';
-	cout << "Misaligned Accesses: " << dram.getMisaligned() << '\n';
-	cout << '\n';
-	
-	cout << "Total Time Elapsed (mS): " << sysclock/1000000 << '\n';
+	// get results
+	results.l1_hits = l1.getHits();
+	results.l1_miss = l1.getMisses();
+	results.l1_hit_rate = l1.getHitRate();
+	results.l1_energy = l1.getEnergy();
+	results.l2_hits = l2.getHits();
+	results.l2_miss = l2.getMisses();
+	results.l2_hit_rate = l2.getHitRate();
+	results.l2_energy = l2.getEnergy();
+	results.dram_energy = dram.getEnergy();
 }
 
 int main(int argc, char* argv[]) {
-    if (argc != 3) {
+    if (argc != 4) {
         cerr << "Usage: " << argv[0] << " <filename> <value>" << std::endl;
         return 1;
     }
     
-    string filename = argv[1];
+    string fname = argv[1];
     unsigned int associativity = stoi(argv[2]);
-    
-    run(filename, associativity);
-    
+	unsigned int trials = stoi(argv[3]); // number of trials to run
+
+	Result results[trials]; // list of all results across all trials
+	for(int i = 0; i < trials; i++) {
+    	run(fname, associativity, results[i]);
+	}
+
+	// Calculate mean
+    Result mean;
+    for (const auto& result : results) {
+        mean.l1_hits += result.l1_hits;
+        mean.l1_miss += result.l1_miss;
+        mean.l1_hit_rate += result.l1_hit_rate;
+        mean.l1_energy += result.l1_energy;
+        mean.l2_hits += result.l2_hits;
+        mean.l2_miss += result.l2_miss;
+        mean.l2_hit_rate += result.l2_hit_rate;
+        mean.l2_energy += result.l2_energy;
+        mean.dram_energy += result.dram_energy;
+    }
+    mean.l1_hits /= trials;
+    mean.l1_miss /= trials;
+    mean.l1_hit_rate /= trials;
+    mean.l1_energy /= trials;
+    mean.l2_hits /= trials;
+    mean.l2_miss /= trials;
+    mean.l2_hit_rate /= trials;
+    mean.l2_energy /= trials;
+    mean.dram_energy /= trials;
+
+    // Calculate standard deviation
+    Result stddev;
+    for (const auto& result : results) {
+        stddev.l1_hits += pow(result.l1_hits - mean.l1_hits, 2);
+        stddev.l1_miss += pow(result.l1_miss - mean.l1_miss, 2);
+        stddev.l1_hit_rate += pow(result.l1_hit_rate - mean.l1_hit_rate, 2);
+        stddev.l1_energy += pow(result.l1_energy - mean.l1_energy, 2);
+        stddev.l2_hits += pow(result.l2_hits - mean.l2_hits, 2);
+        stddev.l2_miss += pow(result.l2_miss - mean.l2_miss, 2);
+        stddev.l2_hit_rate += pow(result.l2_hit_rate - mean.l2_hit_rate, 2);
+        stddev.l2_energy += pow(result.l2_energy - mean.l2_energy, 2);
+        stddev.dram_energy += pow(result.dram_energy - mean.dram_energy, 2);
+    }
+    stddev.l1_hits = sqrt(stddev.l1_hits / trials);
+    stddev.l1_miss = sqrt(stddev.l1_miss / trials);
+    stddev.l1_hit_rate = sqrt(stddev.l1_hit_rate / trials);
+    stddev.l1_energy = sqrt(stddev.l1_energy / trials);
+    stddev.l2_hits = sqrt(stddev.l2_hits / trials);
+    stddev.l2_miss = sqrt(stddev.l2_miss / trials);
+    stddev.l2_hit_rate = sqrt(stddev.l2_hit_rate / trials);
+    stddev.l2_energy = sqrt(stddev.l2_energy / trials);
+    stddev.dram_energy = sqrt(stddev.dram_energy / trials);
+
+    // print out statistics
+	if(trials == 1) 
+		cout << "Test Results (" << trials << " trial): " << fname << '\n';
+	else
+		cout << "Test Results (" << trials << " trials): " << fname << '\n';
+	cout << "Set Associativity Level: " << associativity << '\n';
+	cout << "L1 Cache Hits (mean): " << mean.l1_hits << '\n';
+	cout << "L1 Cache Misses: " << mean.l1_miss << '\n';
+	cout << "L1 Hit Rate: " << mean.l1_hit_rate << '\n';
+	cout << "L1 Energy (mJ): " << mean.l1_energy/1000000 << '\n';
+	cout << '\n';
+	
+	cout << "L2 Cache Hits: " << mean.l2_hits << '\n';
+	cout << "L2 Cache Misses: " << mean.l2_miss << '\n';
+	cout << "L2 Hit Rate: " << mean.l2_hit_rate << '\n';
+	cout << "L2 Energy (mJ): " << mean.l2_energy/1000000 << '\n';
+	cout << '\n';
+	
+	cout << "DRAM Energy (mJ): " << mean.dram_energy/1000000 << '\n';
+	cout << '\n';
+	
+	cout << "Total Energy Consumption (mJ): " << (mean.l1_energy+mean.l2_energy+mean.dram_energy)/1000000 << '\n';
+	cout << "Total Time Elapsed (mS): " << sysclock/1000000 << '\n';
+
     return 0;
 }

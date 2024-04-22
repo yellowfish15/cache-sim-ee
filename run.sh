@@ -19,6 +19,6 @@ do
         # extract filename from full path
         filename=$(basename -- "$file")
         # run C++ program with the filename
-        "./$EXECUTABLE" "$file" 2
+        "./$EXECUTABLE" "$file" $1$ $2$
     fi
 done

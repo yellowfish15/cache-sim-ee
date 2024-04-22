@@ -223,6 +223,10 @@ public:
 	unsigned int getMisses() {
 		return misses;
 	}
+
+	double getHitRate() {
+		return ((double)hits)/(hits+misses);
+	}
 	
 	double getEnergy() {
 		sync();
@@ -347,6 +351,10 @@ public:
 	unsigned int getMisses() {
 		return misses;
 	}
+
+	double getHitRate() {
+		return ((double)hits)/(hits+misses);
+	}
 	
 	double getEnergy() {
 		sync();
@@ -404,6 +412,7 @@ void run(string fname, int associativity) {
 	cout << "L1 Writes: " << l1.getWrites() << '\n'; 
 	cout << "L1 Cache Hits: " << l1.getHits() << '\n';
 	cout << "L1 Cache Misses: " << l1.getMisses() << '\n';
+	cout << "L1 Hit Rate: " << l1.getHitRate() << '\n';
 	cout << "L1 Energy (mJ): " << l1.getEnergy()/1000000 << '\n';
 	cout << '\n';
 	
@@ -411,6 +420,7 @@ void run(string fname, int associativity) {
 	cout << "L2 Writes: " << l2.getWrites() << '\n'; 
 	cout << "L2 Cache Hits: " << l2.getHits() << '\n';
 	cout << "L2 Cache Misses: " << l2.getMisses() << '\n';
+	cout << "L2 Hit Rate: " << l2.getHitRate() << '\n';
 	cout << "L2 Energy (mJ): " << l2.getEnergy()/1000000 << '\n';
 	cout << '\n';
 	
@@ -423,8 +433,16 @@ void run(string fname, int associativity) {
 	cout << "Total Time Elapsed (mS): " << sysclock/1000000 << '\n';
 }
 
-
-int main() {
-    run("./Spec_Benchmark/Spec_Benchmark/047.tomcatv.din", 2);
-	return 0;
+int main(int argc, char* argv[]) {
+    if (argc != 3) {
+        cerr << "Usage: " << argv[0] << " <filename> <value>" << std::endl;
+        return 1;
+    }
+    
+    string filename = argv[1];
+    unsigned int associativity = stoi(argv[2]);
+    
+    run(filename, associativity);
+    
+    return 0;
 }

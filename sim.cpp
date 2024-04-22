@@ -7,6 +7,9 @@
 
 using namespace std;
 
+// system variables
+static double sysclock = 0;
+
 // convert a hex string to an unsigned 32-bit integer
 unsigned int hexStringToUInt(const string& hexString) {
     unsigned int result;
@@ -18,31 +21,34 @@ unsigned int hexStringToUInt(const string& hexString) {
 
 class DRAM {
 private:
+	double clock = 0; // internal clock
+
 	// stats
 	unsigned int misaligned = 0; // number of misaligned memory accesses
 	unsigned int reads = 0; // number of DRAM reads
 	unsigned int writes = 0; // number of DRAM writes
 	double energy = 0; // total energy consumed
 public:
+	// sync energy with sysclock (calculate idle energy)
+	void sync() {
+		if(sysclock > clock) {
+			energy += (sysclock-clock)*0.8;
+			clock = sysclock;
+		}
+	}
+
     // read data from DRAM
-    double read(unsigned int address, double elapsed) {
+    void read(unsigned int address) {
 		if(address%64 != 0)
 			misaligned++;
-		energy += elapsed*0.8; // idle
-		energy += 50*4; // active
+
+		sync(); 
+		clock += 50;
+		sysclock = clock;
+		energy += 50*4; // active energy
 		reads++;
-        return 50; // 50 nsec
     }
-	
-	// add energy spent idle (state = false) or active (state = true)
-	// time is in nanoseconds
-	void addEnergy(double time, bool state) {
-		if(state) // active reads/writes
-			energy += time*4;
-		else // idle
-			energy += time*0.8;
-	}
-	
+
 	unsigned int getMisaligned() {
 		return misaligned;
 	}
@@ -56,12 +62,15 @@ public:
 	}
 	
 	double getEnergy() {
+		sync();
 		return energy;
 	}
 };
 
 class L2 {
 private:
+	double clock = 0; // internal clock
+
     vector<vector<pair<bool, unsigned int>>> sets;
 	const static unsigned int size = 256 * 1024; // size of L2 cache in bytes
 	const static unsigned int lineSize = 64; // line size in bytes
@@ -90,14 +99,24 @@ public:
 			sets.resize(numSets, vector<pair<bool, unsigned int>>(associativity, make_pair(false, 0)));
 		}
 
+	// sync energy with sysclock (calculate idle energy)
+	void sync() {
+		if(sysclock > clock) {
+			energy += (sysclock-clock)*0.8;
+			clock = sysclock;
+		}
+	}
+
     // Read data from cache
-    double read(unsigned int address, double elapsed, DRAM& dram) {
+    void read(unsigned int address, DRAM& dram) {
 		reads++;
         unsigned int index, tag;
         addressMapping(address, index, tag);
 
-		double time = 5;
-		energy += time*2;
+		sync();
+		clock += 5;
+		sysclock = clock;
+		energy += 5*2; // active energy
 
 		bool hit = false;
         // Check each line in the set for a match
@@ -109,14 +128,26 @@ public:
             }
         }
 		if(!hit) { // cache miss
-			double accessTime = dram.read(address, elapsed+time);
-			time += accessTime;
-			elapsed += accessTime;
+			dram.read(address);
 			energy += 0.64; // add 640 picojoules for DRAM access
 			misses++;
+
+			// update L2
+			bool found = false;
+			for (auto& p : sets[index]) {
+				if (!p.first) { // replace an empty slot
+					// update this line
+					p.first = true;
+					p.second = tag;
+					found = true;
+				}
+			}
+			if(!found) { // random eviction
+				pair<bool, unsigned int>& line = sets[index][rand() % associativity];
+				line.first = true;
+				line.second = tag;
+			}
 		}
-		energy += elapsed*0.8;
-        return time;
     }
 
     // Write data to cache
@@ -125,6 +156,9 @@ public:
         unsigned int index, tag;
         addressMapping(address, index, tag);
 
+		sync();
+		clock += 5;
+		sysclock = clock;
 		energy += 5*2; // active energy
 
         // Update cache
@@ -174,6 +208,7 @@ public:
 	}
 	
 	double getEnergy() {
+		sync();
 		return energy;
 	}
 };
@@ -181,6 +216,8 @@ public:
 // split cache between instruction and data
 class L1 {
 private:
+	double clock = 0; // internal clock
+
     const static unsigned int cacheSize = 32 * 1024; // size of the instruction and data caches in bytes
     const static unsigned int lineSize = 64; // Size of each cache line in bytes
 	const static unsigned int numLines = cacheSize/lineSize;
@@ -207,7 +244,6 @@ private:
     }
 
 public:
-
     L1() {
         // Calculate index bits, offset bits, and tag bits based on cache size and line size
         indexBits = log2(cacheSize / lineSize);
@@ -221,31 +257,38 @@ public:
 		}
     }
 
+	// sync energy with sysclock (calculate idle energy)
+	void sync() {
+		if(sysclock > clock) {
+			energy += (sysclock-clock)*0.8;
+			clock = sysclock;
+		}
+	}
+
     // Read data from cache
 	// type: 0 = mem, 1 = instr
 	// return amount of time elapsed
-    double read(unsigned int type, unsigned int address, L2& l2, DRAM& dram) {
+    void read(unsigned int type, unsigned int address, L2& l2, DRAM& dram) {
         unsigned int index, tag;
         addressMapping(address, index, tag);
 
-		double time = 0.5;
-		energy += 0.5; // active
+		sync();
+		clock += 0.5;
+		sysclock = clock;
+		energy += 0.5; // active energy
 
         if (valid[type][index] && cache[type][index] == tag) { // cache hit
 			hits++;
         } else { // cache miss
 			misses++;
 			// read L2
-			double elapsed = l2.read(address, time, dram);
-			energy += 0.5*elapsed; // idle
+			l2.read(address, dram);
 			energy += 0.005; // add 5 picojoules for L2 access
-			time += elapsed;
 			// update L1
 			valid[type][index] = 1;
 			cache[type][index] = tag;
         }
 		reads++;
-		return time;
     }
 
     // Write data to cache
@@ -254,7 +297,12 @@ public:
 	// return amount of time elapsed
     void write(unsigned int type, unsigned int address) {
         unsigned int index, tag;
-		energy += 4.5*0.5+0.5; // idle + active energy
+
+		sync();
+		clock += 0.5;
+		sysclock = clock;
+		energy += 0.5; // active energy
+
         addressMapping(address, index, tag);
 		if (!valid[type][index] || cache[type][index] != tag) {
 			misses++;
@@ -284,6 +332,7 @@ public:
 	}
 	
 	double getEnergy() {
+		sync();
 		return energy;
 	}
 };
@@ -298,14 +347,13 @@ public:
 	System(int associativity) : l2(associativity) {}
 
     void run(string fname) {
+		sysclock = 0; // reset the system clock
+
         ifstream inputFile(fname); // input file
         if (!inputFile) { // file doesn't exist
             cerr << "Failed to open input file!" << endl;
             exit(-1); // error
         }
-
-		// statistics
-		double elapsed = 0; // time elapsed in nanoseconds
 		
         int OP;
         string address, value;
@@ -317,15 +365,14 @@ public:
 			// cout << "OP: " << OP << ", Address: " << address << " -> " << addr << ", Value: " << value << " -> " << val << endl;
             switch (OP) { // trace operations
                 case 0: { // memory read
-					elapsed += l1.read(0, addr, l2, dram);
+					l1.read(0, addr, l2, dram);
                     break;
                 } case 1: { // memory write
 					l1.write(0, addr);
 					l2.write(addr);
-					elapsed += 5; // 5 ns
                     break;
                 } case 2: { // instruction fetch
-					elapsed += l1.read(1, addr, l2, dram);
+					l1.read(1, addr, l2, dram);
                     break;
                 } case 3: // ignore
                     break;
@@ -361,7 +408,7 @@ public:
 		// cout << "Misaligned Accesses: " << dram.getMisaligned() << '\n';
 		cout << '\n';
 		
-		cout << "Total Time Elapsed (mS): " << elapsed/1000000 << '\n';
+		cout << "Total Time Elapsed (mS): " << sysclock/1000000 << '\n';
     }
 };
 

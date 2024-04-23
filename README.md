@@ -41,3 +41,7 @@ Once the setup is complete, execute the script. It will:
 `./run.sh <set_associativity> <num_trials>` 
 
 Replace `<set_associativity>` with the desired L2 set associativity level and `<num_trials>` with the desired number of trials.
+
+## Report and Results
+
+Our [report](https://github.com/yellowfish15/cache-sim-ee/blob/main/report.pdf) in pdf format.

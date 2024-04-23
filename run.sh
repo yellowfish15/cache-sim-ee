@@ -1,7 +1,7 @@
 #!/bin/bash
 
 if (( $# != 2 )); then
-    echo "Need exactly two arguments: <set associativity> <# of trials to run>"
+    echo "Need exactly two arguments: ./run.sh <set associativity> <# of trials to run>"
     exit 1
 fi
 

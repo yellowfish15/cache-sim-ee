@@ -135,7 +135,6 @@ public:
 
 			// update L2
 			bool found = false;
-	/*
 			for (auto& p : sets[index]) {
 				if (!p.first) { // replace an empty slot
 					// update this line
@@ -144,7 +143,6 @@ public:
 					found = true;
 				}
 			}
-	*/
 			if(!found) { // random eviction
 				pair<bool, unsigned int>& line = sets[index][rand() % associativity];
 				line.first = true;
@@ -180,7 +178,6 @@ public:
         if(!hit) { // tag not in cache
 			misses++;
 			bool found = false;
-	/*
 			for (auto& p : sets[index]) {
 				if (!p.first) { // replace an empty slot
 					// update this line
@@ -189,7 +186,6 @@ public:
 					found = true;
 				}
 			}
-	*/
 			if(!found) { // random eviction
 				pair<bool, unsigned int>& line = sets[index][rand() % associativity];
 				line.first = true;
@@ -357,6 +353,7 @@ public:
 
 // contains all the data across all runs
 struct Result {
+	unsigned int misaligned = 0; // number of misaligned addresses
 	unsigned int l1_hits = 0;
 	unsigned int l1_miss = 0;
 	double l1_hit_rate = 0;
@@ -373,6 +370,7 @@ struct Result {
 
 // contains all the data across all runs
 struct Stats {
+	unsigned int misaligned = 0; // number of misaligned addresses
 	double l1_hits = 0;
 	double l1_miss = 0;
 	double l1_hit_rate = 0;
@@ -393,6 +391,7 @@ void run(string fname, int associativity, struct Result& results) {
 	L2 l2(associativity);
 	DRAM dram;
 	sysclock = 0; // reset the system clock
+	int misalign_count = 0;
 
 	ifstream inputFile(fname); // input file
 	if (!inputFile) { // file doesn't exist
@@ -406,18 +405,33 @@ void run(string fname, int associativity, struct Result& results) {
 	while (inputFile >> OP >> address >> value) {
 		unsigned int addr = hexStringToUInt(address);
 		unsigned int val = hexStringToUInt(value);
-		
+
+		// misaligned address
+		bool misaligned = false;
+		if(addr%64 > 60) {
+			misalign_count++;
+			misaligned = true;
+		}
+
 		// cout << "OP: " << OP << ", Address: " << address << " -> " << addr << ", Value: " << value << " -> " << val << '\n';
 		switch (OP) { // trace operations
 			case 0: { // memory read
 				l1.read(0, addr, l2, dram);
+				if(misaligned)
+					l1.read(0, addr, l2, dram);
 				break;
 			} case 1: { // memory write
 				l1.write(0, addr);
 				l2.write(addr, dram);
+				if(misaligned) {
+					l1.write(0, addr);
+					l2.write(addr, dram);
+				}
 				break;
 			} case 2: { // instruction fetch
 				l1.read(1, addr, l2, dram);
+				if(misaligned)
+					l1.read(1, addr, l2, dram);
 				break;
 			} case 3: // ignore
 				break;
@@ -431,6 +445,7 @@ void run(string fname, int associativity, struct Result& results) {
 	inputFile.close();
 	
 	// get results
+	results.misaligned = misalign_count; // get number of misaligned addresses
 	results.l1_hits = l1.getHits();
 	results.l1_miss = l1.getMisses();
 	results.l1_hit_rate = l1.getHitRate();
@@ -442,6 +457,45 @@ void run(string fname, int associativity, struct Result& results) {
 	results.dram_energy = dram.getEnergy()/1000000; // convert from nJ to mJ
 	results.time_elapsed = sysclock/1000000; // convert from nS to mS
 }
+
+/*
+// for debugging
+int main() {
+	string fname = "./Spec_Benchmark/Spec_Benchmark/008.espresso.din";
+	int associativity = 4;
+	Result r;
+	run(fname, associativity, r);
+
+	const int w1 = 20; // width of fields
+	const int w2 = 8; // width of value
+
+	// print out statistics
+	cout << "Test Results: " << fname << '\n';
+	cout << "L2 Associativity Level: " << associativity << '\n';
+	cout << '\n';
+
+	cout << setw(w1) << "L1 Cache Hits: " << setw(w2) << r.l1_hits << '\n';
+	cout << setw(w1) << "L1 Cache Misses: " << setw(w2) << r.l1_miss << '\n';
+	cout << setw(w1) << "L1 Hit Rate: " << setw(w2) << r.l1_hit_rate << '\n';
+	cout << setw(w1) << "L1 Energy (mJ): " << setw(w2) << r.l1_energy << '\n';
+	cout << '\n';
+	
+	cout << setw(w1) << "L2 Cache Hits: " << setw(w2) << r.l2_hits << '\n';
+	cout << setw(w1) << "L2 Cache Misses: " << setw(w2) << r.l2_miss << '\n';
+	cout << setw(w1) << "L2 Hit Rate: " << setw(w2) << r.l2_hit_rate << '\n';
+	cout << setw(w1) << "L2 Energy (mJ): " << setw(w2) << r.l2_energy << '\n';
+	cout << '\n';
+	
+	cout << setw(w1) << "DRAM Energy (mJ): " << setw(w2) << r.dram_energy << '\n';
+	cout << '\n';
+
+	cout << setw(w1) << "Misaligned Addr: " << setw(w2) << r.misaligned << '\n';
+	cout << '\n';
+	
+	cout << setw(w1) << "Total Energy Consumption (mJ): " << (r.l1_energy+r.l2_energy+r.dram_energy) << '\n';
+	cout << setw(w1) << "Total Time Elapsed (mS): " << r.time_elapsed << '\n';
+}
+*/
 
 int main(int argc, char* argv[]) {
     if (argc != 4) {
@@ -469,6 +523,7 @@ int main(int argc, char* argv[]) {
 	if(trials > 1) { // calculate distribution statistics
 		Stats mean; // Calculate mean
 		for (const auto& result : results) {
+			mean.misaligned = result.misaligned;
 			mean.l1_hits += result.l1_hits;
 			mean.l1_miss += result.l1_miss;
 			mean.l1_hit_rate += result.l1_hit_rate;
@@ -517,7 +572,7 @@ int main(int argc, char* argv[]) {
 		stddev.time_elapsed = sqrt(stddev.time_elapsed / trials);
 
 		// print out statistics
-		cout << "Test Results (" << trials << " trials): " << '\n';
+		cout << "Test Results: " << '\n';
 		cout << "L2 Associativity Level: " << associativity << '\n';
 		cout << '\n';
 
@@ -544,6 +599,9 @@ int main(int argc, char* argv[]) {
 		cout << setw(w1) << "DRAM Energy (mJ):" << setw(w2) << setprecision(prec) << mean.dram_energy << setw(w3) << setprecision(prec) << stddev.dram_energy << '\n';
 		cout << '\n';
 
+		cout << "Misaligned Addr: " << mean.misaligned << '\n';
+		cout << '\n';
+
 		cout << "Mean Total Energy Consumption (mJ): " << (mean.l1_energy+mean.l2_energy+mean.dram_energy) << '\n';
 		cout << "Total Time Elapsed (mS): " << mean.time_elapsed << '\n';
 	} else if (trials == 1) {
@@ -568,6 +626,9 @@ int main(int argc, char* argv[]) {
 		cout << '\n';
 		
 		cout << setw(w1) << "DRAM Energy (mJ): " << setw(w2) << results[0].dram_energy << '\n';
+		cout << '\n';
+
+		cout << setw(w1) << "Misaligned Addr: " << setw(w2) << results[0].misaligned << '\n';
 		cout << '\n';
 		
 		cout << setw(w1) << "Total Energy Consumption (mJ): " << (results[0].l1_energy+results[0].l2_energy+results[0].dram_energy) << '\n';

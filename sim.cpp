@@ -49,7 +49,7 @@ public:
     void write(unsigned int address) {
 		sync();
 		/*
-		// we don't update clock
+		// we don't update clock because DRAM write is asynchronous
 		clock += 45;
 		sysclock = clock;
 		*/

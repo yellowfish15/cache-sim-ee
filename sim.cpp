@@ -47,10 +47,13 @@ public:
 
 	// write data to DRAM
     void write(unsigned int address) {
-		sync(); 
-		clock += 50;
+		sync();
+		/*
+		// we don't update clock
+		clock += 45;
 		sysclock = clock;
-		energy += 50*4; // active energy
+		*/
+		energy += 45*4; // active energy
 		writes++;
     }
 	
@@ -160,9 +163,9 @@ public:
         addressMapping(address, index, tag);
 
 		sync();
-		clock += 5;
+		clock += 4.5;
 		sysclock = clock;
-		energy += 5*2; // active energy
+		energy += 4.5*2; // active energy
 
         // Update cache
 		// Check each line in the set for a match
@@ -243,9 +246,9 @@ private:
 	// stats
 	unsigned int reads = 0; // number of L1 reads
 	unsigned int writes = 0; // number of L1 writes
-	unsigned int hits = 0;
-	unsigned int misses = 0;
-	double energy = 0; // total energy consumed
+	unsigned int hits[2];
+	unsigned int misses[2];
+	double energy[2]; // total energy consumed
 
     // Address mapping function to calculate index and tag
     void addressMapping(unsigned int address, unsigned int& index, unsigned int& tag) const {
@@ -260,6 +263,10 @@ public:
         offsetBits = log2(lineSize);
         tagBits = 32 - indexBits - offsetBits;
 
+		hits[0] = hits[1] = 0;
+		misses[0] = misses[1] = 0;
+		energy[0] = energy[1] = 0;
+
 		// reset valid
 		for(int i = 0; i < numLines; i++) {
 			valid[0][i] = false;
@@ -270,7 +277,8 @@ public:
 	// sync energy with sysclock (calculate idle energy)
 	void sync() {
 		if(sysclock > clock) {
-			energy += (sysclock-clock)*0.8;
+			energy[0] += (sysclock-clock)*0.5;
+			energy[1] += (sysclock-clock)*0.5;
 			clock = sysclock;
 		}
 	}
@@ -285,15 +293,16 @@ public:
 		sync();
 		clock += 0.5;
 		sysclock = clock;
-		energy += 0.5; // active energy
+		energy[type] += 0.5*1; // active energy
+		energy[1-type] += 0.5*0.5; // idle energy
 
         if (valid[type][index] && cache[type][index] == tag) { // cache hit
-			hits++;
+			hits[type]++;
         } else { // cache miss
-			misses++;
+			misses[type]++;
 			// read L2
 			l2.read(address, dram);
-			energy += 0.005; // add 5 picojoules for L2 access
+			energy[type] += 0.005; // add 5 picojoules for L2 access
 			// update L1
 			valid[type][index] = 1;
 			cache[type][index] = tag;
@@ -311,16 +320,17 @@ public:
 		sync();
 		clock += 0.5;
 		sysclock = clock;
-		energy += 0.5; // active energy
+		energy[type] += 0.5*1; // active energy
+		energy[1-type] += 0.5*0.5; // idle energy
 
         addressMapping(address, index, tag);
 		if (!valid[type][index] || cache[type][index] != tag) {
-			misses++;
+			misses[type]++;
 			// update L1
 			cache[type][index] = tag;
 			valid[type][index] = true;
 		} else {
-			hits++;
+			hits[type]++;
 		}
 		writes++;
     }
@@ -333,37 +343,48 @@ public:
 		return writes;
 	}
 	
-	unsigned int getHits() {
-		return hits;
+	// type: 0 = mem, 1 = instr
+	unsigned int getHits(int type) {
+		return hits[type];
 	}
 	
-	unsigned int getMisses() {
-		return misses;
+	// type: 0 = mem, 1 = instr
+	unsigned int getMisses(int type) {
+		return misses[type];
 	}
 
-	double getHitRate() {
-		return ((double)hits)/(hits+misses);
+	// type: 0 = mem, 1 = instr
+	double getHitRate(int type) {
+		return ((double)hits[type])/(hits[type]+misses[type]);
 	}
 	
-	double getEnergy() {
+	// type: 0 = mem, 1 = instr
+	double getEnergy(int type) {
 		sync();
-		return energy;
+		return energy[type];
 	}
 };
 
 // contains all the data across all runs
 struct Result {
 	unsigned int misaligned = 0; // number of misaligned addresses
-	unsigned int l1_hits = 0;
-	unsigned int l1_miss = 0;
-	double l1_hit_rate = 0;
-	double l1_energy = 0; // energy consumption in mJ
+	unsigned int l1d_hits = 0;
+	unsigned int l1d_miss = 0;
+	double l1d_hit_rate = 0;
+	double l1d_energy = 0; // energy consumption in mJ
+
+	unsigned int l1i_hits = 0;
+	unsigned int l1i_miss = 0;
+	double l1i_hit_rate = 0;
+	double l1i_energy = 0; // energy consumption in mJ
 
 	unsigned int l2_hits = 0;
 	unsigned int l2_miss = 0;
 	double l2_hit_rate = 0;
 	double l2_energy = 0; // energy consumption in mJ
 
+	unsigned int dram_reads = 0;
+	unsigned int dram_writes = 0;
 	double dram_energy = 0; // energy consumption in mJ
 	double time_elapsed = 0; // time elapsed in mS 
 };
@@ -371,16 +392,23 @@ struct Result {
 // contains all the data across all runs
 struct Stats {
 	unsigned int misaligned = 0; // number of misaligned addresses
-	double l1_hits = 0;
-	double l1_miss = 0;
-	double l1_hit_rate = 0;
-	double l1_energy = 0; // energy consumption in mJ
+	double l1d_hits = 0;
+	double l1d_miss = 0;
+	double l1d_hit_rate = 0;
+	double l1d_energy = 0; // energy consumption in mJ
+
+	double l1i_hits = 0;
+	double l1i_miss = 0;
+	double l1i_hit_rate = 0;
+	double l1i_energy = 0; // energy consumption in mJ
 
 	double l2_hits = 0;
 	double l2_miss = 0;
 	double l2_hit_rate = 0;
 	double l2_energy = 0; // energy consumption in mJ
 
+	double dram_reads = 0;
+	double dram_writes = 0;
 	double dram_energy = 0; // energy consumption in mJ
 	double time_elapsed = 0; // time elapsed in mS 
 };
@@ -446,22 +474,27 @@ void run(string fname, int associativity, struct Result& results) {
 	
 	// get results
 	results.misaligned = misalign_count; // get number of misaligned addresses
-	results.l1_hits = l1.getHits();
-	results.l1_miss = l1.getMisses();
-	results.l1_hit_rate = l1.getHitRate();
-	results.l1_energy = l1.getEnergy()/1000000; // convert from nJ to mJ
+	results.l1d_hits = l1.getHits(0);
+	results.l1d_miss = l1.getMisses(0);
+	results.l1d_hit_rate = l1.getHitRate(0);
+	results.l1d_energy = l1.getEnergy(0)/1000000; // convert from nJ to mJ
+	results.l1i_hits = l1.getHits(1);
+	results.l1i_miss = l1.getMisses(1);
+	results.l1i_hit_rate = l1.getHitRate(1);
+	results.l1i_energy = l1.getEnergy(1)/1000000; // convert from nJ to mJ
 	results.l2_hits = l2.getHits();
 	results.l2_miss = l2.getMisses();
-	results.l2_hit_rate = l2.getHitRate();
 	results.l2_energy = l2.getEnergy()/1000000; // convert from nJ to mJ
+	results.l2_hit_rate = l2.getHitRate();
+	results.dram_reads = dram.getReads();
+	results.dram_writes = dram.getWrites();
 	results.dram_energy = dram.getEnergy()/1000000; // convert from nJ to mJ
 	results.time_elapsed = sysclock/1000000; // convert from nS to mS
 }
 
-/*
 // for debugging
 int main() {
-	string fname = "./Spec_Benchmark/Spec_Benchmark/008.espresso.din";
+	string fname = "./Spec_Benchmark/Spec_Benchmark/047.tomcatv.din";
 	int associativity = 4;
 	Result r;
 	run(fname, associativity, r);
@@ -474,10 +507,16 @@ int main() {
 	cout << "L2 Associativity Level: " << associativity << '\n';
 	cout << '\n';
 
-	cout << setw(w1) << "L1 Cache Hits: " << setw(w2) << r.l1_hits << '\n';
-	cout << setw(w1) << "L1 Cache Misses: " << setw(w2) << r.l1_miss << '\n';
-	cout << setw(w1) << "L1 Hit Rate: " << setw(w2) << r.l1_hit_rate << '\n';
-	cout << setw(w1) << "L1 Energy (mJ): " << setw(w2) << r.l1_energy << '\n';
+	cout << setw(w1) << "L1i Cache Hits: " << setw(w2) << r.l1i_hits << '\n';
+	cout << setw(w1) << "L1i Cache Misses: " << setw(w2) << r.l1i_miss << '\n';
+	cout << setw(w1) << "L1i Hit Rate: " << setw(w2) << r.l1i_hit_rate << '\n';
+	cout << setw(w1) << "L1i Energy (mJ): " << setw(w2) << r.l1i_energy << '\n';
+	cout << '\n';
+
+	cout << setw(w1) << "L1d Cache Hits: " << setw(w2) << r.l1d_hits << '\n';
+	cout << setw(w1) << "L1d Cache Misses: " << setw(w2) << r.l1d_miss << '\n';
+	cout << setw(w1) << "L1d Hit Rate: " << setw(w2) << r.l1d_hit_rate << '\n';
+	cout << setw(w1) << "L1d Energy (mJ): " << setw(w2) << r.l1d_energy << '\n';
 	cout << '\n';
 	
 	cout << setw(w1) << "L2 Cache Hits: " << setw(w2) << r.l2_hits << '\n';
@@ -486,17 +525,20 @@ int main() {
 	cout << setw(w1) << "L2 Energy (mJ): " << setw(w2) << r.l2_energy << '\n';
 	cout << '\n';
 	
+	cout << setw(w1) << "DRAM Reads: " << setw(w2) << r.dram_reads << '\n';
+	cout << setw(w1) << "DRAM Writes: " << setw(w2) << r.dram_writes << '\n';
 	cout << setw(w1) << "DRAM Energy (mJ): " << setw(w2) << r.dram_energy << '\n';
 	cout << '\n';
 
 	cout << setw(w1) << "Misaligned Addr: " << setw(w2) << r.misaligned << '\n';
 	cout << '\n';
 	
-	cout << setw(w1) << "Total Energy Consumption (mJ): " << (r.l1_energy+r.l2_energy+r.dram_energy) << '\n';
+	cout << setw(w1) << "Total Energy Consumption (mJ): " << (r.l1d_energy+r.l1i_energy+r.l2_energy+r.dram_energy) << '\n';
 	cout << setw(w1) << "Total Time Elapsed (mS): " << r.time_elapsed << '\n';
 }
-*/
 
+
+/*
 int main(int argc, char* argv[]) {
     if (argc != 4) {
         cerr << "Usage: " << argv[0] << " <filename> <value>" << endl;
@@ -524,50 +566,74 @@ int main(int argc, char* argv[]) {
 		Stats mean; // Calculate mean
 		for (const auto& result : results) {
 			mean.misaligned = result.misaligned;
-			mean.l1_hits += result.l1_hits;
-			mean.l1_miss += result.l1_miss;
-			mean.l1_hit_rate += result.l1_hit_rate;
-			mean.l1_energy += result.l1_energy;
+			mean.l1d_hits += result.l1d_hits;
+			mean.l1d_miss += result.l1d_miss;
+			mean.l1d_hit_rate += result.l1d_hit_rate;
+			mean.l1d_energy += result.l1d_energy;
+			mean.l1i_hits += result.l1i_hits;
+			mean.l1i_miss += result.l1i_miss;
+			mean.l1i_hit_rate += result.l1i_hit_rate;
+			mean.l1i_energy += result.l1i_energy;
 			mean.l2_hits += result.l2_hits;
 			mean.l2_miss += result.l2_miss;
 			mean.l2_hit_rate += result.l2_hit_rate;
 			mean.l2_energy += result.l2_energy;
+			mean.dram_reads += result.dram_reads;
+			mean.dram_writes += result.dram_writes;
 			mean.dram_energy += result.dram_energy;
 			mean.time_elapsed += result.time_elapsed;
 		}
-		mean.l1_hits /= trials;
-		mean.l1_miss /= trials;
-		mean.l1_hit_rate /= trials;
-		mean.l1_energy /= trials;
+		mean.l1d_hits /= trials;
+		mean.l1d_miss /= trials;
+		mean.l1d_hit_rate /= trials;
+		mean.l1d_energy /= trials;
+		mean.l1i_hits /= trials;
+		mean.l1i_miss /= trials;
+		mean.l1i_hit_rate /= trials;
+		mean.l1i_energy /= trials;
 		mean.l2_hits /= trials;
 		mean.l2_miss /= trials;
 		mean.l2_hit_rate /= trials;
 		mean.l2_energy /= trials;
+		mean.dram_reads /= trials;
+		mean.dram_writes /= trials;
 		mean.dram_energy /= trials;
 		mean.time_elapsed /= trials;
 
 		// Calculate standard deviation
 		Stats stddev;
 		for (const auto& result : results) {
-			stddev.l1_hits += pow(result.l1_hits - mean.l1_hits, 2);
-			stddev.l1_miss += pow(result.l1_miss - mean.l1_miss, 2);
-			stddev.l1_hit_rate += pow(result.l1_hit_rate - mean.l1_hit_rate, 2);
-			stddev.l1_energy += pow(result.l1_energy - mean.l1_energy, 2);
+			stddev.l1d_hits += pow(result.l1d_hits - mean.l1d_hits, 2);
+			stddev.l1d_miss += pow(result.l1d_miss - mean.l1d_miss, 2);
+			stddev.l1d_hit_rate += pow(result.l1d_hit_rate - mean.l1d_hit_rate, 2);
+			stddev.l1d_energy += pow(result.l1d_energy - mean.l1d_energy, 2);
+			stddev.l1i_hits += pow(result.l1i_hits - mean.l1i_hits, 2);
+			stddev.l1i_miss += pow(result.l1i_miss - mean.l1i_miss, 2);
+			stddev.l1i_hit_rate += pow(result.l1i_hit_rate - mean.l1i_hit_rate, 2);
+			stddev.l1i_energy += pow(result.l1i_energy - mean.l1i_energy, 2);
 			stddev.l2_hits += pow(result.l2_hits - mean.l2_hits, 2);
 			stddev.l2_miss += pow(result.l2_miss - mean.l2_miss, 2);
 			stddev.l2_hit_rate += pow(result.l2_hit_rate - mean.l2_hit_rate, 2);
 			stddev.l2_energy += pow(result.l2_energy - mean.l2_energy, 2);
+			stddev.dram_reads += pow(result.dram_reads - mean.dram_reads, 2);
+			stddev.dram_writes += pow(result.dram_writes - mean.dram_writes, 2);
 			stddev.dram_energy += pow(result.dram_energy - mean.dram_energy, 2);
 			stddev.time_elapsed += pow(result.time_elapsed - mean.time_elapsed, 2);
 		}
-		stddev.l1_hits = sqrt(stddev.l1_hits / trials);
-		stddev.l1_miss = sqrt(stddev.l1_miss / trials);
-		stddev.l1_hit_rate = sqrt(stddev.l1_hit_rate / trials);
-		stddev.l1_energy = sqrt(stddev.l1_energy / trials);
+		stddev.l1d_hits = sqrt(stddev.l1d_hits / trials);
+		stddev.l1d_miss = sqrt(stddev.l1d_miss / trials);
+		stddev.l1d_hit_rate = sqrt(stddev.l1d_hit_rate / trials);
+		stddev.l1d_energy = sqrt(stddev.l1d_energy / trials);
+		stddev.l1i_hits = sqrt(stddev.l1i_hits / trials);
+		stddev.l1i_miss = sqrt(stddev.l1i_miss / trials);
+		stddev.l1i_hit_rate = sqrt(stddev.l1i_hit_rate / trials);
+		stddev.l1i_energy = sqrt(stddev.l1i_energy / trials);
 		stddev.l2_hits = sqrt(stddev.l2_hits / trials);
 		stddev.l2_miss = sqrt(stddev.l2_miss / trials);
 		stddev.l2_hit_rate = sqrt(stddev.l2_hit_rate / trials);
 		stddev.l2_energy = sqrt(stddev.l2_energy / trials);
+		stddev.dram_reads = sqrt(stddev.dram_reads / trials);
+		stddev.dram_writes = sqrt(stddev.dram_writes / trials);
 		stddev.dram_energy = sqrt(stddev.dram_energy / trials);
 		stddev.time_elapsed = sqrt(stddev.time_elapsed / trials);
 
@@ -584,10 +650,16 @@ int main(int argc, char* argv[]) {
 		cout << setw(w1) << "Metric:" << setw(w2) << "Mean:" << setw(w3) << "StdDev:" << '\n';
 		// Print statistics
 		cout << fixed << '\n';
-		cout << setw(w1) << "L1 Cache Hits:" << setw(w2) << setprecision(prec) << mean.l1_hits << setw(w3) << setprecision(prec) << stddev.l1_hits << '\n';
-		cout << setw(w1) << "L1 Cache Misses:" << setw(w2) << setprecision(prec) << mean.l1_miss << setw(w3) << setprecision(prec) << stddev.l1_miss << '\n';
-		cout << setw(w1) << "L1 Hit Rate:" << setw(w2) << setprecision(prec) << mean.l1_hit_rate << setw(w3) << setprecision(prec) << stddev.l1_hit_rate << '\n';
-		cout << setw(w1) << "L1 Energy (mJ):" << setw(w2) << setprecision(prec) << mean.l1_energy << setw(w3) << setprecision(prec) << stddev.l1_energy << '\n';
+		cout << setw(w1) << "L1d Cache Hits:" << setw(w2) << setprecision(prec) << mean.l1d_hits << setw(w3) << setprecision(prec) << stddev.l1d_hits << '\n';
+		cout << setw(w1) << "L1d Cache Misses:" << setw(w2) << setprecision(prec) << mean.l1d_miss << setw(w3) << setprecision(prec) << stddev.l1d_miss << '\n';
+		cout << setw(w1) << "L1d Hit Rate:" << setw(w2) << setprecision(prec) << mean.l1d_hit_rate << setw(w3) << setprecision(prec) << stddev.l1d_hit_rate << '\n';
+		cout << setw(w1) << "L1d Energy (mJ):" << setw(w2) << setprecision(prec) << mean.l1d_energy << setw(w3) << setprecision(prec) << stddev.l1d_energy << '\n';
+		cout << '\n';
+
+		cout << setw(w1) << "L1i Cache Hits:" << setw(w2) << setprecision(prec) << mean.l1i_hits << setw(w3) << setprecision(prec) << stddev.l1i_hits << '\n';
+		cout << setw(w1) << "L1i Cache Misses:" << setw(w2) << setprecision(prec) << mean.l1i_miss << setw(w3) << setprecision(prec) << stddev.l1i_miss << '\n';
+		cout << setw(w1) << "L1i Hit Rate:" << setw(w2) << setprecision(prec) << mean.l1i_hit_rate << setw(w3) << setprecision(prec) << stddev.l1i_hit_rate << '\n';
+		cout << setw(w1) << "L1i Energy (mJ):" << setw(w2) << setprecision(prec) << mean.l1i_energy << setw(w3) << setprecision(prec) << stddev.l1i_energy << '\n';
 		cout << '\n';
 
 		cout << setw(w1) << "L2 Cache Hits:" << setw(w2) << setprecision(prec) << mean.l2_hits << setw(w3) << setprecision(prec) << stddev.l2_hits << '\n';
@@ -596,13 +668,15 @@ int main(int argc, char* argv[]) {
 		cout << setw(w1) << "L2 Energy (mJ):" << setw(w2) << setprecision(prec) << mean.l2_energy << setw(w3) << setprecision(prec) << stddev.l2_energy << '\n';
 		cout << '\n';
 
+		cout << setw(w1) << "DRAM Reads:" << setw(w2) << setprecision(prec) << mean.dram_reads << setw(w3) << setprecision(prec) << stddev.dram_reads << '\n';
+		cout << setw(w1) << "DRAM Writes:" << setw(w2) << setprecision(prec) << mean.dram_writes << setw(w3) << setprecision(prec) << stddev.dram_writes << '\n';
 		cout << setw(w1) << "DRAM Energy (mJ):" << setw(w2) << setprecision(prec) << mean.dram_energy << setw(w3) << setprecision(prec) << stddev.dram_energy << '\n';
 		cout << '\n';
 
 		cout << "Misaligned Addr: " << mean.misaligned << '\n';
 		cout << '\n';
 
-		cout << "Mean Total Energy Consumption (mJ): " << (mean.l1_energy+mean.l2_energy+mean.dram_energy) << '\n';
+		cout << "Mean Total Energy Consumption (mJ): " << (mean.l1d_energy+mean.l1i_energy+mean.l2_energy+mean.dram_energy) << '\n';
 		cout << "Total Time Elapsed (mS): " << mean.time_elapsed << '\n';
 	} else if (trials == 1) {
 		const int w1 = 20; // width of fields
@@ -613,10 +687,16 @@ int main(int argc, char* argv[]) {
 		cout << "L2 Associativity Level: " << associativity << '\n';
 		cout << '\n';
 
-		cout << setw(w1) << "L1 Cache Hits: " << setw(w2) << results[0].l1_hits << '\n';
-		cout << setw(w1) << "L1 Cache Misses: " << setw(w2) << results[0].l1_miss << '\n';
-		cout << setw(w1) << "L1 Hit Rate: " << setw(w2) << results[0].l1_hit_rate << '\n';
-		cout << setw(w1) << "L1 Energy (mJ): " << setw(w2) << results[0].l1_energy << '\n';
+		cout << setw(w1) << "L1d Cache Hits: " << setw(w2) << results[0].l1d_hits << '\n';
+		cout << setw(w1) << "L1d Cache Misses: " << setw(w2) << results[0].l1d_miss << '\n';
+		cout << setw(w1) << "L1d Hit Rate: " << setw(w2) << results[0].l1d_hit_rate << '\n';
+		cout << setw(w1) << "L1d Energy (mJ): " << setw(w2) << results[0].l1d_energy << '\n';
+		cout << '\n';
+
+		cout << setw(w1) << "L1i Cache Hits: " << setw(w2) << results[0].l1i_hits << '\n';
+		cout << setw(w1) << "L1i Cache Misses: " << setw(w2) << results[0].l1i_miss << '\n';
+		cout << setw(w1) << "L1i Hit Rate: " << setw(w2) << results[0].l1i_hit_rate << '\n';
+		cout << setw(w1) << "L1i Energy (mJ): " << setw(w2) << results[0].l1i_energy << '\n';
 		cout << '\n';
 		
 		cout << setw(w1) << "L2 Cache Hits: " << setw(w2) << results[0].l2_hits << '\n';
@@ -625,14 +705,17 @@ int main(int argc, char* argv[]) {
 		cout << setw(w1) << "L2 Energy (mJ): " << setw(w2) << results[0].l2_energy << '\n';
 		cout << '\n';
 		
+		cout << setw(w1) << "DRAM Reads: " << setw(w2) << results[0].dram_reads << '\n';
+		cout << setw(w1) << "DRAM Writes: " << setw(w2) << results[0].dram_writes << '\n';
 		cout << setw(w1) << "DRAM Energy (mJ): " << setw(w2) << results[0].dram_energy << '\n';
 		cout << '\n';
 
 		cout << setw(w1) << "Misaligned Addr: " << setw(w2) << results[0].misaligned << '\n';
 		cout << '\n';
 		
-		cout << setw(w1) << "Total Energy Consumption (mJ): " << (results[0].l1_energy+results[0].l2_energy+results[0].dram_energy) << '\n';
+		cout << setw(w1) << "Total Energy Consumption (mJ): " << (results[0].l1d_energy+results[0].l1i_energy+results[0].l2_energy+results[0].dram_energy) << '\n';
 		cout << setw(w1) << "Total Time Elapsed (mS): " << results[0].time_elapsed << '\n';
 	}
     return 0;
 }
+*/

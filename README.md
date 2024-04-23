@@ -38,6 +38,6 @@ Once the setup is complete, execute the script. It will:
 
 ### Example Command
 
-`./script.sh <set_associativity> <num_trials>` 
+`./run.sh <set_associativity> <num_trials>` 
 
 Replace `<set_associativity>` with the desired L2 set associativity level and `<num_trials>` with the desired number of trials.

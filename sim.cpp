@@ -28,6 +28,7 @@ private:
 	unsigned int writes = 0; // number of DRAM writes
 	double energy = 0; // total energy consumed
 public:
+
 	// sync energy with sysclock (calculate idle energy)
 	void sync() {
 		if(sysclock > clock) {
@@ -78,7 +79,6 @@ private:
     vector<vector<pair<bool, unsigned int>>> sets;
 	const static unsigned int size = 256 * 1024; // size of L2 cache in bytes
 	const static unsigned int lineSize = 64; // line size in bytes
-    const unsigned int setSize;
     const unsigned int associativity;
     const unsigned int numSets;
 
@@ -97,7 +97,6 @@ private:
 	
 public:
     L2(unsigned int assoc) :
-        setSize(size / (lineSize * assoc)),
         associativity(assoc),
         numSets(size / lineSize) {
 			sets.resize(numSets, vector<pair<bool, unsigned int>>(associativity, make_pair(false, 0)));
@@ -179,6 +178,7 @@ public:
             }
         }
         if(!hit) { // tag not in cache
+			dram.read(address); // read before write
 			misses++;
 			bool found = false;
 			for (auto& p : sets[index]) {
@@ -492,6 +492,7 @@ void run(string fname, int associativity, struct Result& results) {
 	results.time_elapsed = sysclock/1000000; // convert from nS to mS
 }
 
+/*
 // for debugging
 int main() {
 	string fname = "./Spec_Benchmark/Spec_Benchmark/047.tomcatv.din";
@@ -536,9 +537,8 @@ int main() {
 	cout << setw(w1) << "Total Energy Consumption (mJ): " << (r.l1d_energy+r.l1i_energy+r.l2_energy+r.dram_energy) << '\n';
 	cout << setw(w1) << "Total Time Elapsed (mS): " << r.time_elapsed << '\n';
 }
+*/
 
-
-/*
 int main(int argc, char* argv[]) {
     if (argc != 4) {
         cerr << "Usage: " << argv[0] << " <filename> <value>" << endl;
@@ -638,7 +638,7 @@ int main(int argc, char* argv[]) {
 		stddev.time_elapsed = sqrt(stddev.time_elapsed / trials);
 
 		// print out statistics
-		cout << "Test Results: " << '\n';
+		cout << "Test Results (" << trials << " trials):\n";
 		cout << "L2 Associativity Level: " << associativity << '\n';
 		cout << '\n';
 
@@ -683,7 +683,7 @@ int main(int argc, char* argv[]) {
 		const int w2 = 8; // width of value
 
 		// print out statistics
-		cout << "Test Results (" << trials << " trial): " << fname << '\n';
+		cout << "Test Results (1 trial): " << '\n';
 		cout << "L2 Associativity Level: " << associativity << '\n';
 		cout << '\n';
 
@@ -718,4 +718,3 @@ int main(int argc, char* argv[]) {
 	}
     return 0;
 }
-*/

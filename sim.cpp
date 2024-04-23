@@ -522,25 +522,26 @@ int main(int argc, char* argv[]) {
 		cout << '\n';
 
 		const int w1 = 18; // width of fields
-		const int w2 = 12; // width of mean
+		const int w2 = 14; // width of mean
 		const int w3 = 12; // width of standard deviation
-		const int prec = 4;
+		const int prec = 3;
 
 		cout << setw(w1) << "Metric:" << setw(w2) << "Mean:" << setw(w3) << "StdDev:" << '\n';
 		// Print statistics
-		cout << setw(w1) << "L1 Cache Hits:" << setw(w2) << mean.l1_hits << setw(w3) << setprecision(prec) << stddev.l1_hits << '\n';
-		cout << setw(w1) << "L1 Cache Misses:" << setw(w2) << mean.l1_miss << setw(w3) << setprecision(prec) << stddev.l1_miss << '\n';
-		cout << setw(w1) << "L1 Hit Rate:" << setw(w2) << mean.l1_hit_rate << setw(w3) << setprecision(prec) << stddev.l1_hit_rate << '\n';
-		cout << setw(w1) << "L1 Energy (mJ):" << setw(w2) << mean.l1_energy << setw(w3) << setprecision(prec) << stddev.l1_energy << '\n';
+		cout << fixed << '\n';
+		cout << setw(w1) << "L1 Cache Hits:" << setw(w2) << setprecision(prec) << mean.l1_hits << setw(w3) << setprecision(prec) << stddev.l1_hits << '\n';
+		cout << setw(w1) << "L1 Cache Misses:" << setw(w2) << setprecision(prec) << mean.l1_miss << setw(w3) << setprecision(prec) << stddev.l1_miss << '\n';
+		cout << setw(w1) << "L1 Hit Rate:" << setw(w2) << setprecision(prec) << mean.l1_hit_rate << setw(w3) << setprecision(prec) << stddev.l1_hit_rate << '\n';
+		cout << setw(w1) << "L1 Energy (mJ):" << setw(w2) << setprecision(prec) << mean.l1_energy << setw(w3) << setprecision(prec) << stddev.l1_energy << '\n';
 		cout << '\n';
 
-		cout << setw(w1) << "L2 Cache Hits:" << setw(w2) << mean.l2_hits << setw(w3) << setprecision(prec) << stddev.l2_hits << '\n';
-		cout << setw(w1) << "L2 Cache Misses:" << setw(w2) << mean.l2_miss << setw(w3) << setprecision(prec) << stddev.l2_miss << '\n';
-		cout << setw(w1) << "L2 Hit Rate:" << setw(w2) << mean.l2_hit_rate << setw(w3) << setprecision(prec) << stddev.l2_hit_rate << '\n';
-		cout << setw(w1) << "L2 Energy (mJ):" << setw(w2) << mean.l2_energy << setw(w3) << setprecision(prec) << stddev.l2_energy << '\n';
+		cout << setw(w1) << "L2 Cache Hits:" << setw(w2) << setprecision(prec) << mean.l2_hits << setw(w3) << setprecision(prec) << stddev.l2_hits << '\n';
+		cout << setw(w1) << "L2 Cache Misses:" << setw(w2) << setprecision(prec) << mean.l2_miss << setw(w3) << setprecision(prec) << stddev.l2_miss << '\n';
+		cout << setw(w1) << "L2 Hit Rate:" << setw(w2) << setprecision(prec) << mean.l2_hit_rate << setw(w3) << setprecision(prec) << stddev.l2_hit_rate << '\n';
+		cout << setw(w1) << "L2 Energy (mJ):" << setw(w2) << setprecision(prec) << mean.l2_energy << setw(w3) << setprecision(prec) << stddev.l2_energy << '\n';
 		cout << '\n';
 
-		cout << setw(w1) << "DRAM Energy (mJ):" << setw(w2) << mean.dram_energy << setw(w3) << setprecision(prec) << stddev.dram_energy << '\n';
+		cout << setw(w1) << "DRAM Energy (mJ):" << setw(w2) << setprecision(prec) << mean.dram_energy << setw(w3) << setprecision(prec) << stddev.dram_energy << '\n';
 		cout << '\n';
 
 		cout << "Mean Total Energy Consumption (mJ): " << (mean.l1_energy+mean.l2_energy+mean.dram_energy) << '\n';
